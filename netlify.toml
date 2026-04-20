@@ -1,0 +1,24 @@
+[build]
+  command   = "npm run build"
+  publish   = "dist"
+  functions = "netlify/functions"
+
+[dev]
+  command     = "npm run dev"
+  port        = 8888
+  targetPort  = 5173
+
+# Proxy /api/* → /.netlify/functions/* so frontend calls work in dev and prod
+[[redirects]]
+  from   = "/api/*"
+  to     = "/.netlify/functions/:splat"
+  status = 200
+
+# SPA fallback
+[[redirects]]
+  from   = "/*"
+  to     = "/index.html"
+  status = 200
+
+[functions]
+  node_bundler = "esbuild"
