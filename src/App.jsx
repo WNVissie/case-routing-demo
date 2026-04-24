@@ -9,6 +9,7 @@ import TechnicianTablePage from './pages/TechnicianTablePage.jsx'
 import FeedbackPage        from './pages/FeedbackPage.jsx'
 
 const NAV_LINKS = [
+  { to: '/',             label: 'Home' },
   { to: '/log',          label: 'Log Case' },
   { to: '/cases',        label: 'Case List' },
   { to: '/technicians',  label: 'Technician Map' },
