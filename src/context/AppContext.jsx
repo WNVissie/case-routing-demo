@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useReducer, useEffect } from 'react'
-import { customers as seedCustomers, assets as seedAssets } from '../data/seed.js'
+import { customers as seedCustomers, assets as seedAssets, technicians as seedTechnicians } from '../data/seed.js'
 
 const AppContext = createContext(null)
 const STORAGE_KEY = 'case_routing_demo_v1'
@@ -16,7 +16,9 @@ function loadState() {
 const defaultState = {
   customers: seedCustomers,
   assets: seedAssets,
+  technicians: seedTechnicians,
   cases: [],
+  demoChatId: '',
 }
 
 function reducer(state, action) {
@@ -24,6 +26,26 @@ function reducer(state, action) {
 
     case 'ADD_CASE':
       return { ...state, cases: [action.payload, ...state.cases] }
+
+    case 'CONFIRM_CASE':
+      return {
+        ...state,
+        cases: state.cases.map((c) =>
+          c.id === action.payload.id
+            ? { ...c, confirmed: true, confirmedAt: new Date().toISOString() }
+            : c
+        ),
+      }
+
+    case 'CUSTOMER_ACKNOWLEDGE':
+      return {
+        ...state,
+        cases: state.cases.map((c) =>
+          c.id === action.payload.id
+            ? { ...c, customerAcknowledged: true, customerAcknowledgedAt: new Date().toISOString() }
+            : c
+        ),
+      }
 
     case 'CLOSE_CASE':
       return {
@@ -48,6 +70,32 @@ function reducer(state, action) {
     case 'ADD_CUSTOMER':
       return { ...state, customers: [...state.customers, action.payload] }
 
+    case 'UPDATE_CUSTOMER':
+      return {
+        ...state,
+        customers: state.customers.map((c) =>
+          c.id === action.payload.id ? { ...c, ...action.payload } : c
+        ),
+      }
+
+    case 'UPDATE_TECHNICIAN':
+      return {
+        ...state,
+        technicians: state.technicians.map((t) =>
+          t.id === action.payload.id ? { ...t, ...action.payload } : t
+        ),
+      }
+
+    case 'SET_DEMO_CHAT_ID': {
+      const chatId = action.payload
+      return {
+        ...state,
+        demoChatId: chatId,
+        // Apply to all technicians that don't have a specific ID set
+        technicians: state.technicians.map((t) => ({ ...t, telegramChatId: chatId })),
+      }
+    }
+
     case 'RESET':
       return defaultState
 
@@ -57,7 +105,9 @@ function reducer(state, action) {
 }
 
 export function AppProvider({ children }) {
-  const [state, dispatch] = useReducer(reducer, loadState() || defaultState)
+  // Merge saved state with defaultState so any newly-added keys (e.g. technicians)
+  // are always present even when localStorage has an older snapshot.
+  const [state, dispatch] = useReducer(reducer, { ...defaultState, ...(loadState() || {}) })
 
   // Persist every state change to localStorage
   useEffect(() => {

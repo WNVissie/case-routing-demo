@@ -1,27 +1,18 @@
 // ================================================================
 // TELEGRAM API HELPERS
-//
-// These call Netlify Functions (/api/*) which hold the secret bot
-// token. The frontend never touches the token directly.
-//
-// If the Netlify function returns { sent: false }, it means the
-// Telegram Chat ID env var is not configured — the app degrades
-// gracefully and simply skips the notification.
+// All functions post to Netlify Functions (/api/*).
+// siteUrl (window.location.origin) is passed in every payload so
+// Netlify functions can build deep-link buttons back to the app.
 // ================================================================
 
 const BASE = '/api'
 
-/**
- * Notify the assigned technician when a new case is created.
- * @param {object} payload
- * @returns {Promise<boolean>} true if message was sent
- */
-export async function notifyAssignment(payload) {
+async function post(path, payload) {
   try {
-    const res = await fetch(`${BASE}/notify-assignment`, {
+    const res = await fetch(`${BASE}/${path}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ siteUrl: window.location.origin, ...payload }),
     })
     const data = await res.json()
     return data.sent === true
@@ -30,21 +21,14 @@ export async function notifyAssignment(payload) {
   }
 }
 
-/**
- * Notify the customer when their case is closed and request feedback.
- * @param {object} payload
- * @returns {Promise<boolean>} true if message was sent
- */
-export async function notifyClosure(payload) {
-  try {
-    const res = await fetch(`${BASE}/notify-closure`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    })
-    const data = await res.json()
-    return data.sent === true
-  } catch {
-    return false
-  }
-}
+/** New case created → notify assigned technician with Accept button. */
+export const notifyAssignment    = (p) => post('notify-assignment',    p)
+
+/** Technician accepted → notify customer with Acknowledge button. */
+export const notifyConfirmation  = (p) => post('notify-confirmation',  p)
+
+/** Customer acknowledged → notify technician with case deep-link. */
+export const notifyTechReminder  = (p) => post('notify-tech-reminder', p)
+
+/** Case closed → notify customer with closure note + star rating buttons. */
+export const notifyClosure       = (p) => post('notify-closure',       p)

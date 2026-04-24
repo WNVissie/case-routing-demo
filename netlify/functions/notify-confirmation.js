@@ -1,7 +1,6 @@
 // ================================================================
-// Notify technician of new case assignment.
-// Includes an inline keyboard so they can tap "Accept Case"
-// which deep-links directly to the case in the web app.
+// Notify customer that their technician has accepted the case.
+// Includes an "Acknowledge" button that deep-links to the case.
 // ================================================================
 
 export const handler = async (event) => {
@@ -12,33 +11,30 @@ export const handler = async (event) => {
     return { statusCode: 200, body: JSON.stringify({ sent: false, reason: 'TELEGRAM_BOT_TOKEN not set' }) }
   }
 
-  const { techChatId, technicianName, caseNumber, caseId, customerName, region, description, priority, loggedBy, siteUrl } =
+  const { customerChatId, customerName, caseNumber, caseId, technicianName, siteUrl } =
     JSON.parse(event.body || '{}')
 
-  if (!techChatId) {
-    return { statusCode: 200, body: JSON.stringify({ sent: false, reason: 'No Chat ID for technician — add it on the Technician Map page.' }) }
+  if (!customerChatId) {
+    return { statusCode: 200, body: JSON.stringify({ sent: false, reason: 'No Telegram Chat ID for this customer.' }) }
   }
 
-  const priorityEmoji = { high: '🔴', medium: '🟡', low: '🟢' }[priority] || '⚪'
   const caseUrl = siteUrl ? `${siteUrl}/cases/${caseId}` : null
 
   const text = [
-    `🔧 *New Case Assigned to You*`,
+    `🛠️ *Technician Assigned & Confirmed*`,
     ``,
-    `📋 *${caseNumber}*`,
-    `👤 Customer: ${customerName}`,
-    `📍 Region: ${region}`,
-    `${priorityEmoji} Priority: ${priority.toUpperCase()}`,
-    loggedBy ? `🙋 Logged by: ${loggedBy}` : null,
+    `📋 Case: \`${caseNumber}\``,
+    `Dear *${customerName}*,`,
     ``,
-    `📝 *Issue:*`,
-    description,
+    `Great news! *${technicianName}* has accepted your service case and will be attending to it shortly.`,
     ``,
-    `_Tap the button below to view the case and accept it._`,
-  ].filter(Boolean).join('\n')
+    `Please tap the button below to acknowledge receipt of this notification.`,
+    ``,
+    `_Thank you for your patience._`,
+  ].join('\n')
 
   const body = {
-    chat_id: techChatId,
+    chat_id: customerChatId,
     text,
     parse_mode: 'Markdown',
   }
@@ -46,7 +42,8 @@ export const handler = async (event) => {
   if (caseUrl) {
     body.reply_markup = {
       inline_keyboard: [[
-        { text: '✅  Accept This Case', url: caseUrl },
+        { text: '✅  Acknowledge', url: caseUrl },
+        { text: '📋  View Case Status', url: caseUrl },
       ]],
     }
   }

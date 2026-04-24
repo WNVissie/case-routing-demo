@@ -1,43 +1,9 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { useApp } from '../context/AppContext.jsx'
 import { REGIONS } from '../data/seed.js'
 import { routeCase, generateCaseNumber } from '../utils/routing.js'
 import { notifyAssignment } from '../utils/telegram.js'
-
-// ── helpers ──────────────────────────────────────────────────
-
-function search(term, customers, assets) {
-  const t = term.toLowerCase().trim()
-  if (!t) return []
-
-  // Match customer name or customer number
-  const byCustomer = customers.filter(
-    (c) =>
-      c.name.toLowerCase().includes(t) ||
-      c.customerNumber.toLowerCase().includes(t)
-  )
-
-  // Match asset number → resolve to owning customer
-  const byAsset = assets
-    .filter((a) => a.assetNumber.toLowerCase().includes(t))
-    .map((a) => ({
-      customer: customers.find((c) => c.id === a.customerId),
-      matchedAsset: a,
-    }))
-    .filter((r) => r.customer)
-
-  // Merge, deduplicate by customer id
-  const seen = new Set()
-  const results = []
-  for (const r of [...byCustomer.map((c) => ({ customer: c, matchedAsset: null })), ...byAsset]) {
-    if (!seen.has(r.customer.id)) {
-      seen.add(r.customer.id)
-      results.push(r)
-    }
-  }
-  return results
-}
 
 // ── Success card shown after submission ───────────────────────
 
@@ -57,7 +23,6 @@ function SuccessCard({ caseData, onAnother }) {
         </p>
       </div>
 
-      {/* Routing decision — the key "agent-like" output */}
       <div className={`card border-2 ${techColor}`}>
         <h3 className="font-semibold text-gray-800 mb-2">Routing Decision</h3>
         <p className="text-sm text-gray-700">{caseData.routingReason}</p>
@@ -85,22 +50,96 @@ function SuccessCard({ caseData, onAnother }) {
   )
 }
 
+// ── Contact preference section (shared by new & existing customer) ──
+
+function ContactSection({ pref, onChange, demoChatId }) {
+  return (
+    <div className="space-y-3">
+      <div>
+        <label className="label">How do you want to be contacted? *</label>
+        <div className="flex gap-4 mt-1">
+          {['email', 'telegram'].map((opt) => (
+            <label
+              key={opt}
+              className={`flex-1 text-center py-2 rounded-lg border-2 cursor-pointer text-sm font-medium transition-colors
+                ${pref.preference === opt
+                  ? 'border-blue-500 bg-blue-50 text-blue-700'
+                  : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}
+            >
+              <input
+                type="radio"
+                name="contactPreference"
+                value={opt}
+                className="sr-only"
+                checked={pref.preference === opt}
+                onChange={() => onChange({
+                  preference: opt,
+                  email: '',
+                  telegramChatId: opt === 'telegram' ? (demoChatId || '') : '',
+                })}
+              />
+              {opt === 'email' ? '✉️ Email' : '📱 Telegram'}
+            </label>
+          ))}
+        </div>
+      </div>
+
+      {pref.preference === 'email' && (
+        <div>
+          <label className="label">Email Address *</label>
+          <input
+            className="input"
+            type="email"
+            placeholder="customer@example.com"
+            value={pref.email}
+            onChange={(e) => onChange({ ...pref, email: e.target.value })}
+          />
+        </div>
+      )}
+
+      {pref.preference === 'telegram' && (
+        <div>
+          <label className="label">Telegram Chat ID *</label>
+          <input
+            className="input"
+            type="text"
+            placeholder="e.g. 123456789"
+            value={pref.telegramChatId}
+            onChange={(e) => onChange({ ...pref, telegramChatId: e.target.value })}
+          />
+          <p className="text-xs text-gray-400 mt-1">
+            To find your Chat ID: open Telegram and message{' '}
+            <span className="font-mono bg-gray-100 px-1 rounded">@userinfobot</span> — it replies with your numeric ID.
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Main page ────────────────────────────────────────────────
 
 export default function CaseFormPage() {
   const { state, dispatch } = useApp()
 
-  // Step 1 — search
-  const [searchTerm, setSearchTerm]     = useState('')
-  const [searchResults, setSearchResults] = useState(null) // null = not yet searched
-
-  // Step 2 — customer
+  // Step 1 — customer selection
   const [selectedCustomer, setSelectedCustomer] = useState(null)
   const [selectedAsset, setSelectedAsset]       = useState(null)
   const [showNewForm, setShowNewForm]            = useState(false)
+
+  // New customer fields
   const [newCust, setNewCust] = useState({
-    name: '', customerNumber: '', region: REGIONS[0], email: '',
+    name: '', customerNumber: '', region: REGIONS[0],
   })
+
+  // Contact preference — used for both new and existing customers
+  const [contactPref, setContactPref] = useState({ preference: 'email', email: '', telegramChatId: '' })
+
+  // Step — who is logging
+  const [loggedBy, setLoggedBy] = useState('')
+
+  // Step — photos (up to 2, stored as base64)
+  const [photos, setPhotos] = useState([])
 
   // Step 3 — case details
   const [description, setDescription] = useState('')
@@ -110,20 +149,24 @@ export default function CaseFormPage() {
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted]   = useState(null)
 
+  // When an existing customer is selected, pre-fill contactPref from their stored data
+  // Fall back to demoChatId for telegram if customer has none
+  useEffect(() => {
+    if (selectedCustomer) {
+      const chatId = selectedCustomer.telegramChatId || state.demoChatId || ''
+      setContactPref({
+        preference:     chatId ? 'telegram' : (selectedCustomer.email ? 'email' : 'email'),
+        email:          selectedCustomer.email || '',
+        telegramChatId: chatId,
+      })
+    }
+  }, [selectedCustomer])
+
   // ── handlers ──
 
-  function handleSearch(e) {
-    e.preventDefault()
-    const results = search(searchTerm, state.customers, state.assets)
-    setSearchResults(results)
-    setSelectedCustomer(null)
-    setSelectedAsset(null)
-    setShowNewForm(results.length === 0)
-  }
-
-  function pickCustomer(customer, matchedAsset) {
+  function pickCustomer(customer) {
     setSelectedCustomer(customer)
-    setSelectedAsset(matchedAsset)
+    setSelectedAsset(null)
     setShowNewForm(false)
   }
 
@@ -131,18 +174,42 @@ export default function CaseFormPage() {
     e.preventDefault()
     if (!description.trim()) return
 
+    // Validate contact info
+    if (contactPref.preference === 'email' && !contactPref.email.trim()) {
+      alert('Please enter an email address.')
+      return
+    }
+    if (contactPref.preference === 'telegram' && !contactPref.telegramChatId.trim()) {
+      alert('Please enter a Telegram Chat ID.')
+      return
+    }
+
     setSubmitting(true)
 
-    // If creating a new customer, add them to state first
     let customer = selectedCustomer
+
     if (showNewForm && !selectedCustomer) {
       if (!newCust.name.trim() || !newCust.customerNumber.trim()) {
         alert('Please fill in customer name and customer number.')
         setSubmitting(false)
         return
       }
-      customer = { ...newCust, id: `CUST-${Date.now()}` }
+      customer = {
+        ...newCust,
+        id: `CUST-${Date.now()}`,
+        email:          contactPref.preference === 'email'     ? contactPref.email         : '',
+        telegramChatId: contactPref.preference === 'telegram'  ? contactPref.telegramChatId : '',
+      }
       dispatch({ type: 'ADD_CUSTOMER', payload: customer })
+    } else if (selectedCustomer) {
+      // Update contact info if it changed
+      const updated = {
+        ...selectedCustomer,
+        email:          contactPref.preference === 'email'     ? contactPref.email         : selectedCustomer.email,
+        telegramChatId: contactPref.preference === 'telegram'  ? contactPref.telegramChatId : selectedCustomer.telegramChatId,
+      }
+      dispatch({ type: 'UPDATE_CUSTOMER', payload: updated })
+      customer = updated
     }
 
     if (!customer) {
@@ -152,9 +219,11 @@ export default function CaseFormPage() {
     }
 
     // ── AGENT-LIKE ROUTING ─────────────────────────────────────
-    // This is where the system automatically decides which
-    // technician handles the case based on the customer's region.
-    const { technician, reason } = routeCase(customer.region)
+    const { technician: routedTech, reason } = routeCase(customer.region)
+    // Get the live technician record from state (has editable telegramChatId)
+    const technician = routedTech
+      ? state.technicians.find((t) => t.id === routedTech.id) ?? routedTech
+      : null
     // ──────────────────────────────────────────────────────────
 
     const caseId     = `case-${Date.now()}`
@@ -166,16 +235,20 @@ export default function CaseFormPage() {
       customerId:            customer.id,
       customerName:          customer.name,
       customerNumber:        customer.customerNumber,
-      assetId:               selectedAsset?.id   ?? null,
-      assetNumber:           selectedAsset?.assetNumber   ?? null,
-      assetDescription:      selectedAsset?.description   ?? null,
+      assetId:               selectedAsset?.id          ?? null,
+      assetNumber:           selectedAsset?.assetNumber  ?? null,
+      assetDescription:      selectedAsset?.description  ?? null,
       region:                customer.region,
       description,
       priority,
       assignedTechnicianId:  technician?.id   ?? null,
       assignedTechnicianName: technician?.name ?? 'Unassigned',
       routingReason:         reason,
+      loggedBy:              loggedBy.trim() || null,
+      photos:                photos,
       status:                'open',
+      confirmed:             false,
+      confirmedAt:           null,
       createdAt:             new Date().toISOString(),
       closedAt:              null,
       closureNote:           null,
@@ -191,11 +264,14 @@ export default function CaseFormPage() {
       const sent = await notifyAssignment({
         technicianId:   technician.id,
         technicianName: technician.name,
+        techChatId:     technician.telegramChatId || state.demoChatId || '',
         caseNumber,
+        caseId,
         customerName:   customer.name,
         region:         customer.region,
         description,
         priority,
+        loggedBy:       loggedBy.trim() || null,
       })
       newCase.telegramSent = sent
     }
@@ -205,11 +281,31 @@ export default function CaseFormPage() {
     setSubmitting(false)
   }
 
+  async function handlePhotoChange(e) {
+    const files = Array.from(e.target.files).slice(0, 2)
+    const toBase64 = (file) => new Promise((resolve, reject) => {
+      if (file.size > 2 * 1024 * 1024) {
+        alert(`"${file.name}" is over 2 MB. Please use a smaller image.`)
+        reject()
+        return
+      }
+      const reader = new FileReader()
+      reader.onload  = (ev) => resolve(ev.target.result)
+      reader.onerror = reject
+      reader.readAsDataURL(file)
+    })
+    try {
+      const results = await Promise.all(files.map(toBase64))
+      setPhotos(results)
+    } catch { /* file rejected */ }
+  }
+
   function reset() {
-    setSearchTerm(''); setSearchResults(null)
     setSelectedCustomer(null); setSelectedAsset(null)
     setShowNewForm(false)
-    setNewCust({ name: '', customerNumber: '', region: REGIONS[0], email: '' })
+    setNewCust({ name: '', customerNumber: '', region: REGIONS[0] })
+    setContactPref({ preference: 'email', email: '', telegramChatId: '' })
+    setLoggedBy(''); setPhotos([])
     setDescription(''); setPriority('medium')
     setSubmitted(null)
   }
@@ -229,79 +325,49 @@ export default function CaseFormPage() {
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Log a New Service Case</h1>
         <p className="text-sm text-gray-500 mt-1">
-          Search for an existing customer or create a new one.
+          Select an existing customer or create a new one.
         </p>
       </div>
 
-      {/* ── Step 1: Search ── */}
+      {/* ── Step 1: Select Customer ── */}
       <div className="card">
         <h2 className="font-semibold text-gray-800 mb-3">
           <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-blue-600 text-white text-xs mr-2">1</span>
-          Find Customer
+          Select Customer
         </h2>
-        <form onSubmit={handleSearch} className="flex gap-2">
-          <input
-            className="input flex-1"
-            placeholder="Customer name, customer number (C-0001), or asset number (A-1001)"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-          <button type="submit" className="btn-primary whitespace-nowrap">Search</button>
-        </form>
 
-        {/* Results */}
-        {searchResults !== null && searchResults.length > 0 && !selectedCustomer && (
-          <div className="mt-3 space-y-2">
-            <p className="text-xs text-gray-500">{searchResults.length} result(s) found — click to select:</p>
-            {searchResults.map(({ customer, matchedAsset }) => (
-              <button
-                key={customer.id}
-                onClick={() => pickCustomer(customer, matchedAsset)}
-                className="w-full text-left p-3 rounded-lg border border-gray-200 hover:border-blue-400 hover:bg-blue-50 transition-colors"
-              >
-                <div className="flex items-start justify-between">
-                  <div>
-                    <span className="font-medium text-gray-900">{customer.name}</span>
-                    <span className="ml-2 text-xs text-gray-400">{customer.customerNumber}</span>
-                  </div>
-                  <span className="text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
-                    {customer.region}
-                  </span>
-                </div>
-                {matchedAsset && (
-                  <p className="text-xs text-green-600 mt-1">
-                    Matched asset: {matchedAsset.assetNumber} — {matchedAsset.description}
-                  </p>
-                )}
-              </button>
-            ))}
-            <button
-              onClick={() => { setShowNewForm(true); setSelectedCustomer(null) }}
-              className="text-sm text-blue-600 hover:underline"
-            >
-              Not the right customer? Create a new entry →
-            </button>
-          </div>
-        )}
+        <select
+          className="input"
+          value={selectedCustomer?.id || ''}
+          onChange={(e) => {
+            const val = e.target.value
+            if (!val) { setSelectedCustomer(null); setSelectedAsset(null); setShowNewForm(false); return }
+            const cust = state.customers.find((c) => c.id === val)
+            if (cust) pickCustomer(cust)
+          }}
+        >
+          <option value="">— Select a customer —</option>
+          {state.customers.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name} ({c.customerNumber})
+            </option>
+          ))}
+        </select>
 
-        {searchResults !== null && searchResults.length === 0 && !showNewForm && (
-          <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-800">
-            No customer found. The new customer form is shown below.
-          </div>
-        )}
-
-        {/* Selected customer confirmation */}
         {selectedCustomer && (
-          <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg flex items-center justify-between">
-            <div>
-              <span className="font-medium text-green-800">{selectedCustomer.name}</span>
-              <span className="text-xs text-green-600 ml-2">{selectedCustomer.customerNumber} · {selectedCustomer.region}</span>
-            </div>
-            <button onClick={() => setSelectedCustomer(null)} className="text-xs text-gray-400 hover:text-gray-700">
-              Change
-            </button>
+          <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">
+            <span className="font-medium text-green-800">{selectedCustomer.name}</span>
+            <span className="text-xs text-green-600 ml-2">{selectedCustomer.customerNumber} · {selectedCustomer.region}</span>
           </div>
         )}
+
+        <button
+          type="button"
+          onClick={() => { setShowNewForm(true); setSelectedCustomer(null); setSelectedAsset(null); setContactPref({ preference: state.demoChatId ? 'telegram' : 'email', email: '', telegramChatId: state.demoChatId || '' }) }}
+          className="mt-3 text-sm text-blue-600 hover:underline"
+        >
+          + Create new customer
+        </button>
       </div>
 
       {/* ── New customer form ── */}
@@ -311,29 +377,27 @@ export default function CaseFormPage() {
             <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-yellow-500 text-white text-xs mr-2">+</span>
             New Customer
           </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="label">Customer Name *</label>
-              <input className="input" value={newCust.name}
-                onChange={(e) => setNewCust({ ...newCust, name: e.target.value })} />
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="label">Customer Name *</label>
+                <input className="input" value={newCust.name}
+                  onChange={(e) => setNewCust({ ...newCust, name: e.target.value })} />
+              </div>
+              <div>
+                <label className="label">Customer Number *</label>
+                <input className="input" placeholder="e.g. C-0010" value={newCust.customerNumber}
+                  onChange={(e) => setNewCust({ ...newCust, customerNumber: e.target.value })} />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="label">Region *</label>
+                <select className="input" value={newCust.region}
+                  onChange={(e) => setNewCust({ ...newCust, region: e.target.value })}>
+                  {REGIONS.map((r) => <option key={r}>{r}</option>)}
+                </select>
+              </div>
             </div>
-            <div>
-              <label className="label">Customer Number *</label>
-              <input className="input" placeholder="e.g. C-0010" value={newCust.customerNumber}
-                onChange={(e) => setNewCust({ ...newCust, customerNumber: e.target.value })} />
-            </div>
-            <div>
-              <label className="label">Region *</label>
-              <select className="input" value={newCust.region}
-                onChange={(e) => setNewCust({ ...newCust, region: e.target.value })}>
-                {REGIONS.map((r) => <option key={r}>{r}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="label">Email</label>
-              <input className="input" type="email" value={newCust.email}
-                onChange={(e) => setNewCust({ ...newCust, email: e.target.value })} />
-            </div>
+            <ContactSection pref={contactPref} onChange={setContactPref} demoChatId={state.demoChatId} />
           </div>
           <p className="text-xs text-gray-400 mt-3">
             Region determines which technician will be assigned. See the Technician Map for routing rules.
@@ -341,11 +405,24 @@ export default function CaseFormPage() {
         </div>
       )}
 
-      {/* ── Step 2: Asset (shown after customer selected) ── */}
+      {/* ── Contact method (existing customer) ── */}
+      {selectedCustomer && (
+        <div className="card border-blue-200 border">
+          <h2 className="font-semibold text-gray-800 mb-4">
+            <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-blue-600 text-white text-xs mr-2">2</span>
+            Contact Method
+          </h2>
+          <ContactSection pref={contactPref} onChange={setContactPref} />
+        </div>
+      )}
+
+      {/* ── Asset (shown after customer confirmed) ── */}
       {(selectedCustomer || showNewForm) && (
         <div className="card">
           <h2 className="font-semibold text-gray-800 mb-3">
-            <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-blue-600 text-white text-xs mr-2">2</span>
+            <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-blue-600 text-white text-xs mr-2">
+              {selectedCustomer ? '3' : '2'}
+            </span>
             Asset <span className="text-gray-400 font-normal text-sm">(optional)</span>
           </h2>
 
@@ -386,13 +463,25 @@ export default function CaseFormPage() {
         </div>
       )}
 
-      {/* ── Step 3: Case details ── */}
+      {/* ── Case details ── */}
       {(selectedCustomer || showNewForm) && (
         <form onSubmit={handleSubmit} className="card space-y-4">
           <h2 className="font-semibold text-gray-800">
-            <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-blue-600 text-white text-xs mr-2">3</span>
+            <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-blue-600 text-white text-xs mr-2">
+              {selectedCustomer ? '4' : '3'}
+            </span>
             Case Details
           </h2>
+
+          <div>
+            <label className="label">Your Name (person logging this call)</label>
+            <input
+              className="input"
+              placeholder="e.g. Jane Smith"
+              value={loggedBy}
+              onChange={(e) => setLoggedBy(e.target.value)}
+            />
+          </div>
 
           <div>
             <label className="label">Description *</label>
@@ -424,6 +513,34 @@ export default function CaseFormPage() {
                 </label>
               ))}
             </div>
+          </div>
+
+          <div>
+            <label className="label">
+              Photos <span className="text-gray-400 font-normal">(optional — up to 2, max 2 MB each)</span>
+            </label>
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={handlePhotoChange}
+              className="block w-full text-sm text-gray-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer"
+            />
+            {photos.length > 0 && (
+              <div className="flex gap-3 mt-3 flex-wrap">
+                {photos.map((src, i) => (
+                  <div key={i} className="relative">
+                    <img src={src} alt={`Preview ${i + 1}`}
+                      className="w-24 h-24 object-cover rounded-lg border border-gray-200" />
+                    <button
+                      type="button"
+                      onClick={() => setPhotos((p) => p.filter((_, j) => j !== i))}
+                      className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center hover:bg-red-600"
+                    >×</button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <button type="submit" className="btn-primary w-full py-3 text-base" disabled={submitting}>

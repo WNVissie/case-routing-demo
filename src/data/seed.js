@@ -14,19 +14,19 @@ export const technicians = [
     id: 'TECH-001',
     name: 'Jonathan',
     region: 'Johannesburg, South Africa',
-    telegramChatId: null, // resolved from TELEGRAM_JONATHAN_CHAT_ID
+    telegramChatId: '',
   },
   {
     id: 'TECH-002',
     name: 'Peter',
     region: 'Pretoria, Gauteng',
-    telegramChatId: null, // resolved from TELEGRAM_PETER_CHAT_ID
+    telegramChatId: '',
   },
   {
     id: 'TECH-003',
     name: 'Portia',
     region: 'Port Elizabeth, Eastern Cape',
-    telegramChatId: null, // resolved from TELEGRAM_PORTIA_CHAT_ID
+    telegramChatId: '',
   },
 ]
 
@@ -51,6 +51,7 @@ export const customers = [
     customerNumber: 'C-0001',
     region: 'Johannesburg, South Africa',
     email: 'support@acme.co.za',
+    telegramChatId: '',
   },
   {
     id: 'CUST-002',
@@ -58,6 +59,7 @@ export const customers = [
     customerNumber: 'C-0002',
     region: 'Pretoria, Gauteng',
     email: 'help@techhub.co.za',
+    telegramChatId: '',
   },
   {
     id: 'CUST-003',
@@ -65,6 +67,7 @@ export const customers = [
     customerNumber: 'C-0003',
     region: 'Port Elizabeth, Eastern Cape',
     email: 'it@portsolutions.co.za',
+    telegramChatId: '',
   },
   {
     id: 'CUST-004',
@@ -72,6 +75,7 @@ export const customers = [
     customerNumber: 'C-0004',
     region: 'Pretoria, Gauteng',
     email: 'desk@gauteng-sys.co.za',
+    telegramChatId: '',
   },
   {
     id: 'CUST-005',
@@ -79,6 +83,7 @@ export const customers = [
     customerNumber: 'C-0005',
     region: 'Johannesburg, South Africa',
     email: 'it@joburgretail.co.za',
+    telegramChatId: '',
   },
 ]
 

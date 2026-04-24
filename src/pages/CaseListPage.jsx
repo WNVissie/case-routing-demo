@@ -25,11 +25,25 @@ export default function CaseListPage() {
           <h1 className="text-2xl font-bold text-gray-900">Case List</h1>
           <p className="text-sm text-gray-500 mt-1">All submitted cases with routing decisions.</p>
         </div>
-        <Link to="/" className="btn-primary">+ Log New Case</Link>
+        <Link to="/log" className="btn-primary">+ Log New Case</Link>
+      </div>
+
+      {/* ── Demo notice ── */}
+      <div className="p-4 bg-amber-50 border-2 border-amber-400 rounded-xl">
+        <p className="font-bold text-amber-900 text-sm">📌 Demo Mode — This is an Admin / Manager View</p>
+        <p className="text-amber-800 text-sm mt-1">
+          You are seeing <strong>all cases across all customers</strong>. In a production deployment:
+        </p>
+        <ul className="text-amber-800 text-sm mt-2 space-y-1 list-disc list-inside">
+          <li>Customers would only see <strong>their own</strong> case history (if granted access).</li>
+          <li>Or customers would only access the <strong>Log Case</strong> screen — and receive all updates by <strong>Telegram or Email</strong>.</li>
+          <li>Technicians would see only their <strong>assigned cases</strong>.</li>
+          <li>This full list view is restricted to <strong>admins and managers</strong>.</li>
+        </ul>
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-3 gap-3">
         {[
           { label: 'Total',  value: state.cases.length, color: 'text-gray-800' },
           { label: 'Open',   value: openCount,           color: 'text-green-700' },
@@ -61,7 +75,7 @@ export default function CaseListPage() {
         <div className="card text-center py-16 text-gray-400">
           <div className="text-4xl mb-3">📋</div>
           <p className="font-medium">No cases yet.</p>
-          <Link to="/" className="btn-primary mt-4 inline-flex">Log the first case →</Link>
+          <Link to="/log" className="btn-primary mt-4 inline-flex">Log the first case →</Link>
         </div>
       ) : (
         <div className="card p-0 overflow-hidden">
@@ -71,10 +85,11 @@ export default function CaseListPage() {
                 <tr className="bg-gray-50 border-b border-gray-200 text-left">
                   <th className="px-4 py-3 font-semibold text-gray-700">Case #</th>
                   <th className="px-4 py-3 font-semibold text-gray-700">Customer</th>
-                  <th className="px-4 py-3 font-semibold text-gray-700">Region</th>
+                  <th className="px-4 py-3 font-semibold text-gray-700">Logged by</th>
                   <th className="px-4 py-3 font-semibold text-gray-700">Technician</th>
                   <th className="px-4 py-3 font-semibold text-gray-700">Priority</th>
                   <th className="px-4 py-3 font-semibold text-gray-700">Status</th>
+                  <th className="px-4 py-3 font-semibold text-gray-700 text-center">Confirmed</th>
                   <th className="px-4 py-3 font-semibold text-gray-700">Feedback</th>
                   <th className="px-4 py-3 font-semibold text-gray-700"></th>
                 </tr>
@@ -87,13 +102,18 @@ export default function CaseListPage() {
                       <div className="font-medium text-gray-900">{c.customerName}</div>
                       <div className="text-xs text-gray-400">{c.customerNumber}</div>
                     </td>
-                    <td className="px-4 py-3 text-gray-600 text-xs">{c.region}</td>
+                    <td className="px-4 py-3 text-gray-600 text-sm">{c.loggedBy || <span className="text-gray-300">—</span>}</td>
                     <td className="px-4 py-3 font-medium text-gray-800">{c.assignedTechnicianName}</td>
                     <td className="px-4 py-3">{priorityBadge(c.priority)}</td>
                     <td className="px-4 py-3">
                       <span className={c.status === 'open' ? 'badge-open' : 'badge-closed'}>
                         {c.status}
                       </span>
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      {c.confirmed
+                        ? <span className="text-green-600 text-xs font-medium">✓ Yes</span>
+                        : <span className="text-gray-300 text-xs">—</span>}
                     </td>
                     <td className="px-4 py-3 text-center">
                       {c.feedback
