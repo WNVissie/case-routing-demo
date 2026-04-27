@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { useApp } from '../context/AppContext.jsx'
 import { QRCodeSVG } from 'qrcode.react'
 
-const APP_URL = 'https://chrismbaproject.netlify.app/'
+const APP_URL = 'https://chasingjarvis-5.netlify.app/'
 
 function Section({ icon, title, children }) {
   return (
